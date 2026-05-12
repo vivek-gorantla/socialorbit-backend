@@ -12,16 +12,16 @@ export class RegisterDto {
   @MinLength(3)
   @MaxLength(32)
   @IsNotEmpty()
-  username: string;
+  username!: string;
 
   @IsEmail()
   @IsNotEmpty()
-  email: string;
+  email!: string;
 
   @IsString()
   @MinLength(8)
   @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).+$/, {
     message: 'Password too weak',
   })
-  password: string;
+  password!: string;
 }

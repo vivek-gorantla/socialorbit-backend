@@ -10,11 +10,12 @@ import { EmailVerificationService } from './services/email-verification..service
 import { TokenService } from './services/token.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
-import { SessionPayload, SessionService } from './services/session.service';
-
+import { SessionService } from './services/session.service';
+import { v4 as uuidv4 } from 'uuid';
 import { RedisService } from 'src/redis/redis.service';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
-import { access } from 'fs';
+import { SessionPayload } from './services/token.service';
+
 
 @Injectable()
 export class AuthService {
@@ -153,10 +154,12 @@ export class AuthService {
         };
       }
 
+      const sessionId = uuidv4();
+
       const payload: SessionPayload = {
-        sub: user.id,
+        userId: user.id,
         email: user.email,
-        sessionId: '',
+        sessionId: sessionId,
       };
 
       const accessToken = await this.tokenService.generateAccessToken(payload);
@@ -164,20 +167,22 @@ export class AuthService {
       const refreshToken =
         await this.tokenService.generateRefreshToken(payload);
 
-      const session = await this.sessionService.createSession(
-        user.id,
+      await this.sessionService.createSession({
+        id: sessionId,
+        userId: user.id,
         refreshToken,
-      );
+      })
 
       await this.redis.set(
-        `session:${session.id}`,
+        `session:${sessionId}`,
+
         JSON.stringify({
-          sessionId: session.id,
+          sessionId,
           userId: user.id,
           email: user.email,
-          createdAt: new Date(),
         }),
-        604800
+
+        604800,
       );
 
       return {
@@ -188,7 +193,7 @@ export class AuthService {
         data: {
           accessToken,
           refreshToken,
-          sessionId: session.id,
+          sessionId: sessionId,
         },
       };
     } catch (error) {
@@ -210,9 +215,8 @@ export class AuthService {
         };
       }
 
-      const decoded = await this.tokenService.verifyRefreshToken(body.refreshToken);
-      const userId = decoded.sub;
-      const email = decoded.email;
+      const decoded = await this.tokenService.verifyRefreshToken(body.refreshToken)
+      const userId = decoded.userId;
       const session = await this.sessionService.validateSession(userId, body.refreshToken);
 
       if (!session) {
@@ -223,6 +227,8 @@ export class AuthService {
       }
 
       // delete old session and token
+      await this.sessionService.deleteSession(session.id);
+
       await this.redis.delete(
         `session:${session.id}`
       );
@@ -231,32 +237,42 @@ export class AuthService {
         `user_sessions:${userId}:${session.id}`
       );
 
-      await this.sessionService.deleteSession(session.id);
+
+      const newSessionId = uuidv4();
+
 
       const payload: SessionPayload = {
-        sub: decoded.sub,
+        userId: decoded.userId,
         email: decoded.email,
-        sessionId: '',
+        sessionId: newSessionId,
       };
 
       const newAccessToken = await this.tokenService.generateAccessToken(payload);
       const newRefreshToken = await this.tokenService.generateRefreshToken(payload);
 
-      const newSession = await this.sessionService.createSession(userId, newRefreshToken);
+      const newSession = await this.sessionService.createSession({
+        id: newSessionId,
+        userId: userId,
+        refreshToken: newRefreshToken,
+      });
 
       await this.redis.set(
-        `session:${newSession.id}`,
+        `session:${newSessionId}`,
+
         JSON.stringify({
-          sessionId: newSession.id,
-          userId: userId,
-          email: email,
-          createdAt: new Date(),
-        }),
-        604800
-      );
+          sessionId:
+            newSessionId,
 
+          userId,
+
+          email:
+            decoded.email,
+        }),
+
+        604800,
+      );
       await this.redis.set(
-        `user_sessions:${userId}:${newSession.id}`,
+        `user_sessions:${userId}:${newSessionId}`,
         "active",
         604800
       );
@@ -272,7 +288,7 @@ export class AuthService {
       }
 
 
-    } catch (error: any) {
+    } catch {
       return {
         success: false,
         message: 'Token refresh failed',
