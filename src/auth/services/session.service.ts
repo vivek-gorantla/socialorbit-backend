@@ -4,18 +4,18 @@ import * as argon2 from 'argon2';
 
 import { PrismaService } from 'src/prisma/prisma.service';
 
-export interface SessionPayload {
-  sub: number;
-  email: string;
-  sessionId: string;
+export interface CreateSessionPayload {
+  id: string;
+  userId: number;
+  refreshToken: string;
 }
 
 @Injectable()
 export class SessionService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
-  async createSession(userId: number, refreshToken: string) {
-    const hashedRefreshToken = await argon2.hash(refreshToken);
+  async createSession(data:CreateSessionPayload) {
+    const hashedRefreshToken = await argon2.hash(data.refreshToken);
 
     const expiresAt = new Date();
 
@@ -23,7 +23,8 @@ export class SessionService {
 
     return this.prisma.session.create({
       data: {
-        userId,
+        id: data.id,
+        userId: data.userId,
         refreshTokenHash: hashedRefreshToken,
         expiresAt,
       },
