@@ -14,16 +14,37 @@ datasource db {
 }
 
 model UserAuth {
-  id             Int            @id @default(autoincrement())
-  email          String         @unique
-  username       String         @unique
-  password       String
-  isVerified     Boolean        @default(false)
-  is_active      Boolean        @default(true)
+  id       Int    @id @default(autoincrement())
+  email    String @unique
+  username String @unique
+  password String
+
+  isVerified   Boolean   @default(false)
+  isVerifiedAt DateTime?
+
+  isMfaEnabled Boolean @default(false)
+
+  is_active Boolean @default(true)
+
   last_login     DateTime       @default(now())
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   refresh_tokens RefreshToken[]
+  sessions       Session[]
+}
+
+model Session {
+  id                String   @id @default(uuid())
+
+  userId            Int
+
+  refreshTokenHash  String
+
+  createdAt         DateTime @default(now())
+
+  expiresAt         DateTime
+
+  user              UserAuth @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model RefreshToken {

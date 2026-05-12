@@ -1,50 +1,35 @@
-import {
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  HttpStatus,
-  Post,
-  Request
-} from '@nestjs/common';
+import { Body, Controller, Post, Get, Query } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { Public } from './public.decorator';
-import { UsersService } from '../users/users.service';
-import type { UserAuth } from '../generated/prisma/client';
 import { Logger } from '@nestjs/common';
+import { RegisterDto } from './dto/register.dto';
+import { LoginDto } from './dto/login.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
 
 @Controller('auth')
 export class AuthController {
   private readonly logger = new Logger(AuthController.name);
 
-  constructor(
-    private readonly authService: AuthService,
-    private readonly usersService: UsersService,
-  ) {
+  constructor(private readonly authService: AuthService) {
     this.logger.log('AuthController initialized');
   }
 
-  @Public()
-  @HttpCode(HttpStatus.OK)
+  @Post('register')
+  async register(@Body() dto: RegisterDto) {
+    return this.authService.register(dto);
+  }
+
+  @Get('verify-email')
+  async verifyEmail(@Query('token') token: string) {
+    return this.authService.verifyEmail(token);
+  }
+
   @Post('login')
-  signIn(@Body() signInDto: Record<string, any>) {
-    return this.authService.signIn(signInDto.username, signInDto.password);
+  async login(@Body() body: LoginDto) {
+    return this.authService.login(body);
   }
 
-  @Public()
-  @Post('signup')
-  signUp(@Body() user: UserAuth) {
-    return this.usersService.createUser(user);
-  }
-
-  @Get('profile')
-  getProfile(@Request() req) {
-    return req.user;
-  }
-
-  @Public()
-  @Get('findAll')
-  findAll() {
-    return [];
+  @Post('refresh')
+  async refreshToken(@Body() body: RefreshTokenDto) {
+    return this.authService.refreshToken(body);
   }
 }
