@@ -67,4 +67,15 @@ export class SessionService {
       },
     });
   }
+
+  async findSessionById(sessionId: string) {
+    return this.prisma.session.findUnique({
+      where: {
+        id: sessionId,
+      },
+      include: {
+        user: true,
+      }
+    });
+  }
 }

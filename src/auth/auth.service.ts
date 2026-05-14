@@ -16,7 +16,6 @@ import { RedisService } from 'src/redis/redis.service';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { SessionPayload } from './services/token.service';
 
-
 @Injectable()
 export class AuthService {
   constructor(
@@ -46,6 +45,7 @@ export class AuthService {
       }
 
       const hashedPassword = await argon2.hash(body.password);
+
 
       const user = await this.prisma.userAuth.create({
         data: {
@@ -156,7 +156,7 @@ export class AuthService {
 
       const sessionId = uuidv4();
 
-      const payload: SessionPayload = {
+      const payload = {
         userId: user.id,
         email: user.email,
         sessionId: sessionId,
@@ -167,10 +167,15 @@ export class AuthService {
       const refreshToken =
         await this.tokenService.generateRefreshToken(payload);
 
+      const refreshTokenHash =
+        await argon2.hash(
+          refreshToken,
+        );
+
       await this.sessionService.createSession({
         id: sessionId,
         userId: user.id,
-        refreshToken,
+        refreshToken: refreshTokenHash,
       })
 
       await this.redis.set(
@@ -217,7 +222,7 @@ export class AuthService {
 
       const decoded = await this.tokenService.verifyRefreshToken(body.refreshToken)
       const userId = decoded.userId;
-      const session = await this.sessionService.validateSession(userId, body.refreshToken);
+      const session = await this.sessionService.findSessionById(decoded.sessionId);
 
       if (!session) {
         return {
@@ -226,22 +231,32 @@ export class AuthService {
         };
       }
 
-      // delete old session and token
-      await this.sessionService.deleteSession(session.id);
+      const isValid =
+        await argon2.verify(
+          session.refreshTokenHash,
+          body.refreshToken,
+        );
 
-      await this.redis.delete(
-        `session:${session.id}`
-      );
+      if (!isValid) {
 
-      await this.redis.delete(
-        `user_sessions:${userId}:${session.id}`
-      );
 
+        // delete old session and token
+        await this.sessionService.deleteSession(session.id);
+
+        await this.redis.delete(
+          `session:${session.id}`
+        );
+
+        await this.redis.delete(
+          `user_sessions:${userId}:${session.id}`
+        );
+
+      }
 
       const newSessionId = uuidv4();
 
 
-      const payload: SessionPayload = {
+      const payload = {
         userId: decoded.userId,
         email: decoded.email,
         sessionId: newSessionId,
@@ -250,10 +265,15 @@ export class AuthService {
       const newAccessToken = await this.tokenService.generateAccessToken(payload);
       const newRefreshToken = await this.tokenService.generateRefreshToken(payload);
 
+      const refreshTokenHash =
+        await argon2.hash(
+          newRefreshToken,
+        );
+
       const newSession = await this.sessionService.createSession({
         id: newSessionId,
         userId: userId,
-        refreshToken: newRefreshToken,
+        refreshToken: refreshTokenHash,
       });
 
       await this.redis.set(
@@ -294,5 +314,81 @@ export class AuthService {
         message: 'Token refresh failed',
       }
     }
+  }
+
+
+  async validateSession(sessionId: string): Promise<SessionPayload | null> {
+    const redisKey = `session:${sessionId}`;
+
+    const cachedSession = await this.redis.get(redisKey);
+    if (cachedSession) {
+      return JSON.parse(cachedSession) as SessionPayload;
+    }
+
+    const session = await this.prisma.session.findUnique({
+      where: {
+        id: sessionId,
+      },
+      include: {
+        user: true,
+      }
+    })
+
+    if (!session) {
+      return null;
+    }
+
+    const now = new Date();
+
+    if (session.expiresAt < now) {
+      return null;
+    }
+
+    const ttlSeconds = Math.floor(
+      (session.expiresAt.getTime() -
+        now.getTime()) /
+      1000,
+    );
+
+    await this.redis.set(
+      redisKey,
+      JSON.stringify(session),
+      ttlSeconds,
+    );
+
+    return null;
+  }
+
+  async logout(sessionId: string) {
+    await this.sessionService.deleteSession(sessionId);
+
+    await this.redis.delete(
+      `session:${sessionId}`
+    );
+
+    // also delete user_sessions entry
+    const session = await this.prisma.session.findUnique({
+      where: {
+        id: sessionId,
+      },
+    });
+
+    if (session) {
+      await this.redis.delete(
+        `user_sessions:${session.userId}:${sessionId}`
+      );
+    }
+    return {
+      success: true,
+      message: 'Logged out successfully',
+    };
+  }
+
+  async revokeSession(sessionId: string) {
+    await this.sessionService.deleteSession(sessionId);
+  }
+
+  async verifyRefreshToken(refreshToken: string, hash: string) {
+    return await argon2.verify(hash, refreshToken);
   }
 }
