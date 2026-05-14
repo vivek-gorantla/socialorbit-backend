@@ -13,8 +13,25 @@ datasource db {
   provider = "postgresql"
 }
 
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum ProfileVisibility {
+  PUBLIC
+  PRIVATE
+  FOLLOWERS
+}
+
+enum Theme {
+  LIGHT
+  DARK
+}
+
 model UserAuth {
-  id       Int    @id @default(autoincrement())
+  id       String @id @default(uuid())
   email    String @unique
   username String @unique
   password String
@@ -24,36 +41,124 @@ model UserAuth {
 
   isMfaEnabled Boolean @default(false)
 
-  is_active Boolean @default(true)
+  is_active  Boolean  @default(true)
+  last_login DateTime @default(now())
 
-  last_login     DateTime       @default(now())
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
+
   refresh_tokens RefreshToken[]
   sessions       Session[]
+
+  profile      UserProfile?
 }
 
 model Session {
-  id                String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  userId            Int
+  userId String
 
-  refreshTokenHash  String
+  refreshTokenHash String
 
-  createdAt         DateTime @default(now())
+  createdAt DateTime @default(now())
 
-  expiresAt         DateTime
+  expiresAt DateTime
 
-  user              UserAuth @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user UserAuth @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model RefreshToken {
-  id        Int      @id @default(autoincrement())
+  id        String   @id @default(uuid())
   token     String   @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  user_id   Int
+  user_id   String
   user      UserAuth @relation(fields: [user_id], references: [id])
 
   @@map("refresh_tokens")
+}
+
+model UserProfile {
+  id String @id @default(uuid())
+
+  userId String @unique
+
+  firstName String
+  lastName  String
+
+  bio String?
+
+  avatarUrl     String?
+  coverImageUrl String?
+
+  website String?
+
+  gender Gender @default(MALE)
+
+  dob DateTime?
+
+  skills String[]
+
+  profession String?
+
+  location String?
+
+  userSettings UserSettings?
+  userStats    UserStats?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user UserAuth @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([profession])
+}
+
+model UserSettings {
+  id String @id @default(uuid())
+
+  userId String @unique
+
+  profileVisibility ProfileVisibility @default(PUBLIC)
+
+  allowStrangerMessages Boolean @default(true)
+
+  allowTagging Boolean @default(true)
+
+  allowNotifications Boolean @default(true)
+
+  theme Theme @default(LIGHT)
+
+  language String @default("en")
+
+  timezone String @default("UTC")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user UserProfile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model UserStats {
+  id String @id @default(uuid())
+
+  userId String @unique
+
+  followersCount Int @default(0)
+
+  followingCount Int @default(0)
+
+  postsCount Int @default(0)
+
+  profileViews Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user UserProfile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
